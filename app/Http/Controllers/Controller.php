@@ -243,7 +243,7 @@ class Controller extends BaseController
         $taskModel->setCreatedAt($date->unix());
         $taskModel->setCompleteTill($date->addDay()->unix());
         $taskModel->setTaskTypeId(TaskModel::TASK_TYPE_ID_CALL);
-        $taskModel->setText('Новая задача 4 дня');
+        $taskModel->setText('Новая задача 4 дня ('.$date->format("Y-m-d H:i:s").')x');
         $taskModel->setEntityType(EntityTypesInterface::LEADS);
         $taskModel->setEntityId($leadModel->getId());
 
