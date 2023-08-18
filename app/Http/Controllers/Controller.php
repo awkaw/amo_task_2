@@ -227,12 +227,20 @@ class Controller extends BaseController
             $date->addDay();
         }
 
+        $days = 0;
+
         if($date->dayOfWeek == 0){
             $date->addDays(1);
+            $days += 2;
         }
 
         if($date->dayOfWeek == 6){
             $date->addDays(2);
+            $days += 2;
+        }
+
+        if($days != 0){
+            $date->diff($days);
         }
 
         if($date->hour < 9){
