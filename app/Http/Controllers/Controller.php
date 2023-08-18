@@ -231,7 +231,7 @@ class Controller extends BaseController
 
         if($date->dayOfWeek == 0){
             $date->addDays(1);
-            $days += 2;
+            $days += 1;
         }
 
         if($date->dayOfWeek == 6){
@@ -240,7 +240,7 @@ class Controller extends BaseController
         }
 
         if($days != 0){
-            $date->diff($days);
+            $date->subDays($days);
         }
 
         if($date->hour < 9){
