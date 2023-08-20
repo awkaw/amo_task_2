@@ -77,7 +77,7 @@ class AmoCRMService
         }
     }
 
-    private function getDomain()
+    public function getDomain()
     {
         $data = json_decode(file_get_contents($this->token_path), true);
 
@@ -88,6 +88,20 @@ class AmoCRMService
 
         } else {
             exit('Invalid access domain ' . var_export($data, true));
+        }
+    }
+
+    public function getAccessToken()
+    {
+        $data = json_decode(file_get_contents($this->token_path), true);
+
+        if (
+            isset($data) && isset($data['accessToken'])
+        ) {
+            return $data['accessToken'];
+
+        } else {
+            exit('Invalid access token ' . var_export($data, true));
         }
     }
 }

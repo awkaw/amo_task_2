@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use AmoCRM\Client\AmoCRMApiClient;
 use AmoCRM\Collections\CatalogElementsCollection;
 use AmoCRM\Collections\ContactsCollection;
+use AmoCRM\Collections\CustomFields\CustomFieldsCollection;
 use AmoCRM\Collections\CustomFieldsValuesCollection;
 use AmoCRM\Collections\Leads\LeadsCollection;
 use AmoCRM\Collections\Leads\Pipelines\PipelinesCollection;
 use AmoCRM\Collections\LinksCollection;
+use AmoCRM\Collections\TagsCollection;
 use AmoCRM\Collections\TasksCollection;
 use AmoCRM\Exceptions\AmoCRMApiException;
 use AmoCRM\Exceptions\AmoCRMMissedTokenException;
@@ -16,16 +18,20 @@ use AmoCRM\Exceptions\AmoCRMoAuthApiException;
 use AmoCRM\Filters\ContactsFilter;
 use AmoCRM\Filters\EntitiesLinksFilter;
 use AmoCRM\Helpers\EntityTypesInterface;
+use AmoCRM\Models\AccountModel;
 use AmoCRM\Models\CatalogElementModel;
 use AmoCRM\Models\CatalogModel;
 use AmoCRM\Models\ContactModel;
 use AmoCRM\Models\Customers\CustomerModel;
+use AmoCRM\Models\CustomFields\NumericCustomFieldModel;
+use AmoCRM\Models\CustomFields\TextCustomFieldModel;
 use AmoCRM\Models\CustomFieldsValues\TextCustomFieldValuesModel;
 use AmoCRM\Models\CustomFieldsValues\ValueCollections\NumericCustomFieldValueCollection;
 use AmoCRM\Models\CustomFieldsValues\ValueCollections\TextCustomFieldValueCollection;
 use AmoCRM\Models\CustomFieldsValues\ValueModels\NumericCustomFieldValueModel;
 use AmoCRM\Models\CustomFieldsValues\ValueModels\TextCustomFieldValueModel;
 use AmoCRM\Models\LeadModel;
+use AmoCRM\Models\TagModel;
 use AmoCRM\Models\TaskModel;
 use AmoCRM\Models\UserModel;
 use App\Models\PersonalAccessToken;
@@ -119,7 +125,16 @@ class Controller extends BaseController
                         if($lead->getStatusId() == 142)
                         {
                             // Добавляем покупателя
-                            $this->add_customer($contact);
+                            $customerModel = $this->add_customer($user_id, $contact);
+
+                            // Добавим тег
+                            $tagModel = new TagModel();
+                            $tagModel->setName($lead->getName());
+
+                            $tagsCollection = new TagsCollection();
+                            $tagsCollection->add($tagModel);
+
+                            $customerModel->setTags($tagsCollection);
                         }
                     }
                 }
@@ -128,7 +143,7 @@ class Controller extends BaseController
 
         // Если нет дубля, то создаем контакт
         if($contact === null){
-            $contact = $this->add_contact();
+            $contact = $this->add_contact($user_id, $this->amo->account()->getCurrent());
         }
 
         // Добавляем сделку
@@ -139,18 +154,6 @@ class Controller extends BaseController
 
         // Добавить задачу
         $this->add_task($user_id, $newLeadModel);
-
-        /*$linksService = $this->amo->links(EntityTypesInterface::CONTACTS);
-
-        $lead = $this->amo->leads()->getOne(1000);
-
-        $contacts = $lead->getContacts();
-
-        $lead->getContacts()->offsetGet(1);
-
-        $link = new LinksCollection();
-
-        $this->amo->leads()->link($lead, $link);*/
 
         return [
             "code" => 200,
@@ -181,7 +184,6 @@ class Controller extends BaseController
 
     protected function add_products(LeadModel $leadModel): void
     {
-
         $catalogsCollection = $this->amo->catalogs()->get();
         $catalog = $catalogsCollection->getBy('name', 'Товары');
 
@@ -221,37 +223,48 @@ class Controller extends BaseController
     {
         $taskModel = new TaskModel();
 
-        $date = Carbon::now()->addDays(4);
+        $createdAt = Carbon::now();
 
-        if($date->hour > 18 && $date->minute > 0){
-            $date->addDay();
+        $createdAt->hour = 9;
+        $createdAt->minute = 0;
+        $createdAt->second = 0;
+
+        if($createdAt->hour > 18 && $createdAt->minute > 0 && $createdAt->second > 0){
+            $createdAt->addDays(1);
         }
 
-        $days = 0;
-
-        if($date->dayOfWeek == 0){
-            $date->addDays(1);
-            $days += 1;
+        if($createdAt->dayOfWeek == 0){
+            $createdAt->addDays(1);
         }
 
-        if($date->dayOfWeek == 6){
-            $date->addDays(2);
-            $days += 2;
+        if($createdAt->dayOfWeek == 6){
+            $createdAt->addDays(2);
         }
 
-        if($days != 0){
-            $date->subDays($days);
+        $dateEnd = Carbon::now()->addDays(4);
+
+        $dateEnd->hour = 9;
+        $dateEnd->minute = 0;
+        $dateEnd->second = 0;
+
+        if($dateEnd->hour > 17 && $dateEnd->minute > 59 && $dateEnd->second > 59){
+            $dateEnd->addDay();
         }
 
-        if($date->hour < 9){
-            $date->hour = 9;
+        if($dateEnd->dayOfWeek == 0){
+            $dateEnd->addDays(1);
+        }
+
+        if($dateEnd->dayOfWeek == 6){
+            $dateEnd->addDays(2);
         }
 
         $taskModel->setResponsibleUserId($user_id);
-        $taskModel->setCreatedAt($date->unix());
-        $taskModel->setCompleteTill($date->addDay()->unix());
+        $taskModel->setCreatedAt($createdAt->unix());
+        $taskModel->setCompleteTill($dateEnd->unix());
+        $taskModel->setDuration(9 * 60 * 60);
         $taskModel->setTaskTypeId(TaskModel::TASK_TYPE_ID_CALL);
-        $taskModel->setText('Новая задача 4 дня ('.$date->format("Y-m-d H:i:s").')');
+        $taskModel->setText('Новая задача');
         $taskModel->setEntityType(EntityTypesInterface::LEADS);
         $taskModel->setEntityId($leadModel->getId());
 
@@ -262,21 +275,27 @@ class Controller extends BaseController
         $this->amo->tasks()->add($tasksCollection);
     }
 
-    protected function add_customer(ContactModel $contactModel): void
+    protected function add_customer(int $user_id, ContactModel $contactModel): CustomerModel
     {
         $customerModel = new CustomerModel();
 
-        $customerModel->setName($contactModel->getFirstName()." ".$contactModel->getLastName());
+        $customerModel->setName("Покупатель ".$contactModel->getFirstName()." ".$contactModel->getLastName());
 
-        $customers = $this->amo->customers();
+        $customerModel->setResponsibleUserId($user_id);
 
-        $customers->addOne($customerModel);
+        $customerModel->setNextDate(Carbon::now()->addDay()->unix());
+
+        $customerService = $this->amo->customers();
+
+        $customerModel = $customerService->addOne($customerModel);
 
         $links = new LinksCollection();
 
         $links->add($contactModel);
 
-        $customers->link($customerModel, $links);
+        $customerService->link($customerModel, $links);
+
+        return $customerModel;
     }
 
     protected function get_leads_from_contact(ContactModel $contactModel): LeadsCollection
@@ -328,40 +347,94 @@ class Controller extends BaseController
     {
         $duplicate = null;
 
-        $contacts = $this->amo->contacts()->get();
+        /*$amoService = new AmoCRMService();
 
-        if($contacts->count() > 0)
-        {
-            foreach ($contacts as $contact) {
+        $subdomain = $amoService->getDomain();
+        $access_token = $amoService->getAccessToken();
 
-                if($contact instanceof ContactModel){
+        $response = Http::withHeaders([
+            "Authorization" => "Bearer {$access_token}",
+            "Content-Type" => "application/json"
+        ])
+            ->withUserAgent("amoCRM-oAuth-client/1.0")
+            ->get("https://".$subdomain."/api/v4/contacts")
+        ;
 
-                    $customFields = $contact->getCustomFieldsValues();
+        Log::debug(print_r($response->json(), true));
+        Log::debug(print_r($response->body(), true));*/
 
-                    if($customFields){
+        try{
 
-                        $customPhone = $customFields->getBy("fieldCode", "PHONE");
+            $contacts = $this->amo->contacts()->get();
 
-                        if($customPhone->getValues()->first()->getValue() == $this->phone){
+            if($contacts->count() > 0)
+            {
+                foreach ($contacts as $contact) {
 
-                            $duplicate = $contact;
+                    if($contact instanceof ContactModel){
 
-                            break;
+                        $customFields = $contact->getCustomFieldsValues();
+
+                        if($customFields){
+
+                            $customPhone = $customFields->getBy("fieldCode", "PHONE");
+
+                            if($customPhone->getValues()->first()->getValue() == $this->phone){
+
+                                $duplicate = $contact;
+
+                                break;
+                            }
                         }
                     }
                 }
             }
+
+        }catch (\Exception $e)
+        {
+
         }
 
         return $duplicate;
     }
 
-    public function add_contact(): ContactModel
+    protected function add_fields(): void
     {
+        $customFieldsService = $this->amo->customFields(EntityTypesInterface::CONTACTS);
+        $customFieldsCollection = new CustomFieldsCollection();
+
+        $result = $customFieldsService->get();
+
+        if (!$result->getBy('code', 'SEX')) {
+            $sex = new TextCustomFieldModel();
+            $sex->setName('Пол')->setSort(30)->setCode('SEX');
+            $customFieldsCollection->add($sex);
+        }
+        if (!$result->getBy('code', 'AGE')) {
+            $age = new NumericCustomFieldModel();
+            $age->setName('Возраст')->setSort(40)->setCode('AGE');
+            $customFieldsCollection->add($age);
+        }
+
+        if (isset($sex) || isset($age)) {
+            $customFieldsService->add($customFieldsCollection);
+        }
+    }
+
+    public function add_contact(int $user_id, AccountModel $accountModel): ContactModel
+    {
+        $this->add_fields();
+
         $contactModel = new ContactModel();
+
+        $contactModel->setName($this->first_name." ".$this->last_name);
 
         $contactModel->setFirstName($this->first_name);
         $contactModel->setLastName($this->last_name);
+
+        $contactModel->setResponsibleUserId($user_id);
+        $contactModel->setCreatedBy($user_id);
+        $contactModel->setAccountId($accountModel->getId());
 
         $customFields = new CustomFieldsValuesCollection();
 
@@ -416,6 +489,8 @@ class Controller extends BaseController
         );
 
         $customFields->add($ageField);
+
+        $contactModel->setCustomFieldsValues($customFields);
 
         $this->amo->contacts()->addOne($contactModel);
 

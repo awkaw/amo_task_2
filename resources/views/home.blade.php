@@ -31,9 +31,9 @@
         </div>
 
         <div class="input">
-            <label for="phone">Телефон</label>
-            <input type="tel" name="phone" id="phone" pattern="[0-9]{9-10}"
-                   placeholder="(Без 7) 9999999999"
+            <label for="phone">Телефон (10 символов)</label>
+            <input type="tel" name="phone" id="phone" pattern="[0-9]{10}"
+                   placeholder="9999999999"
                    required
             >
         </div>
@@ -56,7 +56,7 @@
             <input type="radio" name="gender" id="gender" value="woman" required>
         </div>
 
-        <button>Отправить</button>
+        <button id="sendButtonForm">Отправить</button>
 
     </form>
 
@@ -74,6 +74,8 @@
 
             let formData = new FormData(form);
 
+            document.querySelector('#sendButtonForm').setAttribute("disabled", "disabled");
+
             fetch("{{route("send")}}",
                 {
                     body: formData,
@@ -88,7 +90,7 @@
 
                 }).then(function (response){
 
-                    console.log(response);
+                    document.querySelector('#sendButtonForm').removeAttribute("disabled");
 
                     form.reset();
                 });
